@@ -75,6 +75,113 @@ if (DEV_MODE) {
   };
 }
 
+function snakeToCamel(str: string) {
+  return str.toString().replace(/([-_][a-z])/g, group => group.toUpperCase().replace('-', '').replace('_', ''));
+}
+
+function addEditorCallbacks(elem: any) {
+  let elemName = snakeToCamel(elem.localName).replace('sl', '').replace('fy', '');
+
+  let cs = elem.__proto__;
+  if (!cs.fyDefined) {
+    cs.fyDefined = true;
+    cs._globalCallbackForAttrChange = true;
+
+    cs.fyName = elemName;
+    cs.editorModule = elemName + 'Edit';
+    cs.editorContextMenu = ['Edit', 'Add', 'Duplicate', 'Delete'];
+    cs.canDelete = true;
+    cs.canCopy = true;
+
+    let attributes = cs.constructor.observedAttributes;
+    // let fn = cs.attributeChangedCallback;
+
+    for (let attribute_ of attributes) {
+      let attribute = snakeToCamel(attribute_);
+      // @ts-ignore
+      let setterFn: any = Object.getOwnPropertyDescriptor(cs, attribute).set;
+      // cs[attribute + 'FySet'] = setterFn;
+
+      if (setterFn) {
+        Object.defineProperty(cs, attribute, {
+          set: function (new_value) {
+            if (this._globalCallbackForAttrChange) {
+              let event = new CustomEvent('editorChangeAttributeCb', {
+                detail: {
+                  elem: this,
+                  field_name: attribute,
+                  value: new_value
+                }
+              });
+              document.dispatchEvent(event);
+            }
+
+            if (typeof this.onAttributeChange === 'function') {
+              this.onAttributeChange({
+                elem: this,
+                field_name: attribute,
+                value: new_value
+              });
+            }
+
+            setterFn.call(this, new_value);
+          }
+        });
+      }
+    }
+  }
+
+  /* Attach Editor Callback for click */
+  elem.addEventListener(
+    'click',
+    // @ts-ignore
+    e => {
+      // e.stopPropagation();
+      // if (this._callbackForAttrChange) {
+      let event = new CustomEvent('editorClickCb', { detail: { elem: elem, nativeEvent: e } });
+      document.dispatchEvent(event);
+      // }
+    },
+    { capture: true }
+  );
+
+  /* Attach Editor Highlight on hover */
+  // if (elem.nodeName.toLowerCase() != 'fy-add-element') {
+  elem.addEventListener(
+    'mouseover',
+    // @ts-ignore
+    e => {
+      e.target.style.outline = '1px dashed #0075EA';
+    },
+    { capture: true }
+  );
+
+  /* Attach Editor Highlight on hover */
+  elem.addEventListener(
+    'mouseout',
+    // @ts-ignore
+    e => {
+      e.target.style.outline = 'none';
+    },
+    { capture: true }
+  );
+  // }
+
+  /* Attach Editor Callback for Right click */
+
+  elem.addEventListener(
+    'contextmenu',
+    // @ts-ignore
+    e => {
+      e.preventDefault();
+      let event = new CustomEvent('editorContextmenuCb', { detail: { elem: elem, nativeEvent: e } });
+      document.dispatchEvent(event);
+    },
+    { capture: true }
+  );
+}
+
+
 /**
  * Base element class that manages element properties and attributes, and
  * renders a lit-html template.
@@ -92,6 +199,12 @@ export class LitElement extends ReactiveElement {
    * optimizations. See @lit/reactive-element for more information.
    */
   protected static override ['finalized'] = true;
+
+  constructor() {
+    // @ts-ignore
+    super(...arguments);
+    addEditorCallbacks(this);
+  }
 
   // This property needs to remain unminified.
   static ['_$litElement$'] = true;
